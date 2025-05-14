@@ -1,0 +1,9 @@
+build
+eggs
+logs
+dbs
+__pycache__
+newscraper.egg-info
+venv
+.env
+*.json
