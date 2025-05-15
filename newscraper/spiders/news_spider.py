@@ -3,6 +3,12 @@ import json
 import re
 from urllib.parse import urljoin
 import requests
+import uuid
+from datetime import datetime
+
+
+from newscraper.utils import DatabaseUtils
+
 
 class NewsSpiderSpider(scrapy.Spider):
     name = "news_spider"
@@ -13,6 +19,7 @@ class NewsSpiderSpider(scrapy.Spider):
         self.base_url = base_url
         self.results = self.load_existing_articles()
         self.existing_urls = self.load_existing_urls()
+        self.db_utils = DatabaseUtils()
 
         if job_data:
             try:
@@ -44,33 +51,35 @@ class NewsSpiderSpider(scrapy.Spider):
             url = job.get("category_url")
             url = urljoin(self.base_url, url)
             regex = job.get("regular_expression")
+            category_id = job.get("category_id")
             # domain = job.get("domain")
             if url:
                 self.logger.info(f"Starting with {url}")
                 yield scrapy.Request(
-                    url=url, callback=self.parse, meta={"base_url": self.base_url, "regex": regex}
+                    url=url, callback=self.parse, meta={"base_url": self.base_url, "regex": regex, "category_id": category_id}
                 )
 
     def parse(self, response):
         base_url = response.meta.get("base_url")
         regex = response.meta.get("regex")
+        category_id = response.meta.get("category_id")
         pattern = re.compile(regex)
         a_tags = response.css("a::attr(href)").getall()
         for a_tag in a_tags:
             absolute_url = urljoin(base_url, a_tag)
             if pattern.match(absolute_url) and absolute_url not in self.existing_urls:
                 yield scrapy.Request(
-                url=absolute_url, callback=self.parse_article
+                url=absolute_url, callback=self.parse_article, meta={"category_id": category_id}
             )       
         # Your logic here
 
     def parse_article(self, response):
         self.logger.info("#### Got the response")
-
+        category_id = response.meta.get("category_id")
         try:
             # Send content to the readability API
             api_response = requests.post(
-            "http://172.19.128.1:3000/api/readability",
+            "http://localhost:3000/api/readability",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"htmlString": response.text})
         )
@@ -79,6 +88,20 @@ class NewsSpiderSpider(scrapy.Spider):
                 json_data = api_response.json()
                 json_data['url'] = response.url  # Include source URL
                 self.results.append(json_data)
+
+                data_to_insert = {
+                    "id": str(uuid.uuid4()),
+                    "category_id":category_id,
+                    "link": json_data.get("url"),
+                    "title":json_data.get("title"),
+                    "content":json_data.get("textContent"),
+                    "html_content":json_data.get("content"),
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now(),       
+                }
+
+                self.db_utils.insert_data("content", data_to_insert)
+
                 filename = re.sub(r'[^a-zA-Z0-9]', "", self.base_url)
                 filename = filename + ".json"
                 with open(filename, 'a', encoding='utf-8') as f:

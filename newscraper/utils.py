@@ -3,6 +3,9 @@ import psycopg2
 from psycopg2 import sql
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+load_dotenv()   
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
